@@ -1,0 +1,23 @@
+[ PZR-DELTA-01 CIRCULAR RNA ARCHITECTURE ]
+[ 5' -> 3' Directionality ]
+
+( LINKER REGION ) 
+   ||
+   ||==> [ IRES (Internal Ribosome Entry Site) ] 
+   ||       :: Recruitment of Ribosomes independent of 5' Cap
+   ||
+   ||==> [ KOZAK SEQUENCE ] 
+   ||       :: GCCRCCATGG (Translation Initiation Optimization)
+   ||
+   ||==> [ CODING REGION: Anti-IgE ScFv ]
+   ||       :: Encodes the neutralizing antibody fragment
+   ||       :: Optimized Codon Usage for Human Hepatocytes
+   ||
+   ||==> [ 3' UTR REGULATORY DOMAIN ]
+   ||       :: [ miR-122 Binding Site ] (LIVER_ON Switch)
+   ||       :: [ Aptazyme Switch ] (KEY_ACTIVATION Switch)
+   ||
+   ||==> [ POLY-A STRETCH (Internal) ]
+   ||       :: Stability enhancement
+   ||
+( CIRCULARIZATION JUNCTION )
