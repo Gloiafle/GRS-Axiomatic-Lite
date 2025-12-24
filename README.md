@@ -32,3 +32,20 @@ This code ensures that once the "Seed and Key" are administered, the recipient i
     ├── molecular_logic.py       # Python simulation of the miRNA "AND" Gate
     ├── lnp_formulation.json     # Lipid Nanoparticle stoichiometry
     └── payload_architecture.txt # circRNA Sequence Schematic
+
+
+# Project Zero-React (PZR) // Version Delta-01
+**Status:** In Silico / Phase 1 Deployment Ready
+**License:** Axiomatic Open Source (AOS)
+
+## System Overview
+PZR is a programmable circular RNA (circRNA) therapeutic platform designed to permanently downregulate IgE-mediated hypersensitivity. 
+
+It utilizes a **"Seed & Key"** architecture:
+1.  **The Seed (Payload):** A biologically inert circRNA vector delivered to hepatocytes.
+2.  **The Key (Activator):** A small-molecule inducer that triggers the splicing mechanism to release the therapeutic protein.
+
+## Core Mechanisms
+* **Vector:** Circular RNA (circRNA) for high stability (t1/2 > 48h) and evasion of innate immune detection.
+* **Logic Gate:** 3' UTR microRNA binding sites (miR-122) act as a "Tissue-Specific Lock," ensuring expression occurs *only* in the liver, preventing off-target effects in immune cells.
+* **Delivery:** Zwitterionic Lipid Nanoparticles (LNPs) synthesized via Midnight Press R2R microfluidics.
