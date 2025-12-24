@@ -1,0 +1,36 @@
+{
+  "formulation_id": "LNP-Zwitter-Delta01",
+  "method": "Microfluidic Impingement Jet Mixing",
+  "parameters": {
+    "flow_rate_ratio": "3:1 (Aqueous:Ethanol)",
+    "total_flow_rate": "12 mL/min",
+    "np_ratio": 6.0
+  },
+  "lipid_composition_molar_percent": {
+    "ionizable_lipid": {
+      "name": "D-Lin-MC3-DMA (Optimization Grade)",
+      "percent": 50.0,
+      "role": "Endosomal Escape"
+    },
+    "helper_lipid": {
+      "name": "DSPC (1,2-distearoyl-sn-glycero-3-phosphocholine)",
+      "percent": 10.0,
+      "role": "Bilayer Stability"
+    },
+    "structural_lipid": {
+      "name": "Cholesterol (Avanti Polar)",
+      "percent": 38.5,
+      "role": "Particle Integrity"
+    },
+    "stealth_lipid": {
+      "name": "DMG-PEG 2000",
+      "percent": 1.5,
+      "role": "Circulation Time Extension"
+    }
+  },
+  "quality_control_targets": {
+    "particle_size_nm": [70, 90],
+    "pdi": 0.08,
+    "encapsulation_efficiency": ">95%"
+  }
+}
