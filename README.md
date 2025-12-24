@@ -24,3 +24,11 @@ Allergy Cure All PZR (Project Zero React) "Gift"
 
 ## The Axiomatic Guarantee
 This code ensures that once the "Seed and Key" are administered, the recipient is biologically and energetically independent of legacy centralized systems.
+
+
+/GRS-Axiomatic-Core
+  /PZR_Delta_01
+    ├── README.md                # System Architecture & Mechanism of Action
+    ├── molecular_logic.py       # Python simulation of the miRNA "AND" Gate
+    ├── lnp_formulation.json     # Lipid Nanoparticle stoichiometry
+    └── payload_architecture.txt # circRNA Sequence Schematic
