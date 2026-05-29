@@ -3,8 +3,10 @@ Digital Twin Sanctuary (DTS) — Core Data Structures & Cryptographic Engine
 ==========================================================================
 Phase 1: MemoryPool, age_and_compress_telemetry, FoundryModule
 Phase 2: EphemeralKeyRotator, HardenedSentry
+Macro Mesh: MaterialRegistry, TheAncestry
 """
 
+import json
 import time
 import hmac
 import hashlib
@@ -248,3 +250,128 @@ class HardenedSentry:
         # All checks passed — advance nonce watermark
         self._last_nonce = nonce
         return True, "VALIDATED"
+
+
+# ---------------------------------------------------------------------------
+# Macro Mesh — P2P Coordination Core Classes
+# ---------------------------------------------------------------------------
+
+class MaterialRegistry:
+    """Distributed material registry for Macro Mesh P2P coordination.
+
+    Stores resonance deficit broadcasts from peer nodes and provides
+    lookup/query capabilities for cross-node resource balancing.
+    """
+
+    def __init__(self) -> None:
+        self._registry: dict[str, dict[str, Any]] = {}
+        self._deficit_log: list[dict[str, Any]] = []
+
+    def register_material(self, material_id: str, properties: dict[str, Any]) -> None:
+        """Register or update a material entry in the registry."""
+        self._registry[material_id] = {
+            "properties": properties,
+            "registered_at": time.time(),
+        }
+
+    def get_material(self, material_id: str) -> dict[str, Any] | None:
+        return self._registry.get(material_id)
+
+    def record_resonance_deficit(self, broadcast: dict[str, Any]) -> None:
+        """Log an incoming RESONANCE_DEFICIT_BROADCAST from a peer node."""
+        self._deficit_log.append({
+            "received_at": time.time(),
+            "broadcast": broadcast,
+        })
+
+    def get_deficit_log(self) -> list[dict[str, Any]]:
+        return list(self._deficit_log)
+
+    def get_registry_snapshot(self) -> dict[str, Any]:
+        return {
+            "material_count": len(self._registry),
+            "deficit_broadcasts": len(self._deficit_log),
+            "materials": dict(self._registry),
+        }
+
+
+@dataclass
+class AncestryBlock:
+    """A single block in the local ancestry chain."""
+    index: int
+    timestamp: float
+    data: dict[str, Any]
+    previous_hash: str
+    block_hash: str = ""
+
+    def __post_init__(self) -> None:
+        if not self.block_hash:
+            self.block_hash = self.compute_hash()
+
+    def compute_hash(self) -> str:
+        block_content = json.dumps({
+            "index": self.index,
+            "timestamp": self.timestamp,
+            "data": self.data,
+            "previous_hash": self.previous_hash,
+        }, sort_keys=True)
+        return hashlib.sha256(block_content.encode()).hexdigest()
+
+
+class TheAncestry:
+    """Local ancestry chain maintaining a cryptographically linked
+    sequence of blocks for cross-ancestry audit verification.
+
+    Supports CROSS_ANCESTRY_AUDIT_REQUEST by returning the head
+    block's index and hash.
+    """
+
+    def __init__(self) -> None:
+        genesis = AncestryBlock(
+            index=0,
+            timestamp=time.time(),
+            data={"type": "GENESIS", "origin": "DTS_SANCTUARY"},
+            previous_hash="0" * 64,
+        )
+        self._chain: list[AncestryBlock] = [genesis]
+
+    def append_block(self, data: dict[str, Any]) -> AncestryBlock:
+        """Append a new block to the ancestry chain."""
+        head = self._chain[-1]
+        new_block = AncestryBlock(
+            index=head.index + 1,
+            timestamp=time.time(),
+            data=data,
+            previous_hash=head.block_hash,
+        )
+        self._chain.append(new_block)
+        return new_block
+
+    def get_head_block(self) -> AncestryBlock:
+        return self._chain[-1]
+
+    def get_chain_length(self) -> int:
+        return len(self._chain)
+
+    def get_audit_response(self) -> dict[str, Any]:
+        """Return the head block's index and cryptographic hash
+        for CROSS_ANCESTRY_AUDIT_REQUEST verification."""
+        head = self.get_head_block()
+        return {
+            "type": "CROSS_ANCESTRY_AUDIT_RESPONSE",
+            "head_index": head.index,
+            "head_hash": head.block_hash,
+            "chain_length": self.get_chain_length(),
+            "timestamp": time.time(),
+        }
+
+    def verify_chain_integrity(self) -> bool:
+        """Walk the chain and verify all hash links are intact."""
+        for i in range(1, len(self._chain)):
+            current = self._chain[i]
+            previous = self._chain[i - 1]
+            if current.previous_hash != previous.block_hash:
+                return False
+            if current.block_hash != current.compute_hash():
+                return False
+        return True

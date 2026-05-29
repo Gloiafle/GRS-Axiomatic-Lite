@@ -2,6 +2,7 @@
 Digital Twin Sanctuary (DTS) — Asynchronous Network Graft Point
 ================================================================
 Phase 3: TheLive runtime + NetworkGraftServer (FastAPI WebSocket)
+Macro Mesh: P2P TCP socket server on :8899
 """
 
 import asyncio
@@ -19,7 +20,9 @@ from dts_core import (
     EphemeralKeyRotator,
     FoundryModule,
     HardenedSentry,
+    MaterialRegistry,
     MemoryPool,
+    TheAncestry,
     age_and_compress_telemetry,
 )
 
@@ -54,6 +57,8 @@ class TheLive:
         self.rotator = EphemeralKeyRotator(anchor_key)
         self.sentry = HardenedSentry(self.rotator, self.memory_pool)
         self.foundry = FoundryModule()
+        self.material_registry = MaterialRegistry()
+        self.the_ancestry = TheAncestry()
 
         self.state: SystemState = SystemState.SYNCED
         self.symbiotic_phase_locks: list[str] = []
@@ -213,6 +218,7 @@ async def graft_endpoint(websocket: WebSocket) -> None:
 @app.on_event("startup")
 async def start_background_sequences() -> None:
     asyncio.create_task(_telemetry_compression_loop())
+    asyncio.create_task(_run_macro_mesh_server())
 
 
 async def _telemetry_compression_loop() -> None:
@@ -220,6 +226,97 @@ async def _telemetry_compression_loop() -> None:
     while True:
         await asyncio.sleep(60)
         age_and_compress_telemetry(the_live.memory_pool)
+
+
+# ---------------------------------------------------------------------------
+# Macro Mesh — P2P TCP Socket Server (:8899)
+# ---------------------------------------------------------------------------
+
+MACRO_MESH_HOST = "127.0.0.1"
+MACRO_MESH_PORT = 8899
+
+
+async def _handle_macro_mesh_client(
+    reader: asyncio.StreamReader, writer: asyncio.StreamWriter
+) -> None:
+    """Handle a single Macro Mesh P2P TCP connection.
+
+    Parses incoming newline-delimited JSON frames and dispatches:
+      - RESONANCE_DEFICIT_BROADCAST  → MaterialRegistry
+      - CROSS_ANCESTRY_AUDIT_REQUEST → TheAncestry
+    """
+    peer = writer.get_extra_info("peername")
+    try:
+        while True:
+            data = await reader.readline()
+            if not data:
+                break
+
+            try:
+                frame = json.loads(data.decode().strip())
+            except (json.JSONDecodeError, UnicodeDecodeError):
+                the_live.memory_pool.log_friction({
+                    "type": "MACRO_MESH_MALFORMED",
+                    "peer": str(peer),
+                    "raw": data[:200].decode(errors="replace"),
+                })
+                response = {"status": "ERROR", "reason": "Malformed frame"}
+                writer.write((json.dumps(response) + "\n").encode())
+                await writer.drain()
+                continue
+
+            frame_type = frame.get("type", "")
+
+            if frame_type == "RESONANCE_DEFICIT_BROADCAST":
+                the_live.material_registry.record_resonance_deficit(frame)
+                the_live.the_ancestry.append_block({
+                    "type": "RESONANCE_DEFICIT",
+                    "source": frame.get("source", "unknown"),
+                    "deficit": frame.get("deficit", {}),
+                })
+                response = {
+                    "status": "DEFICIT_ACKNOWLEDGED",
+                    "registry_snapshot": the_live.material_registry.get_registry_snapshot(),
+                }
+                writer.write((json.dumps(response) + "\n").encode())
+                await writer.drain()
+
+            elif frame_type == "CROSS_ANCESTRY_AUDIT_REQUEST":
+                audit_response = the_live.the_ancestry.get_audit_response()
+                writer.write((json.dumps(audit_response) + "\n").encode())
+                await writer.drain()
+
+            else:
+                the_live.memory_pool.log_friction({
+                    "type": "MACRO_MESH_UNKNOWN_FRAME",
+                    "peer": str(peer),
+                    "frame_type": frame_type,
+                })
+                response = {
+                    "status": "ERROR",
+                    "reason": f"Unknown frame type: {frame_type}",
+                }
+                writer.write((json.dumps(response) + "\n").encode())
+                await writer.drain()
+
+    except (ConnectionResetError, BrokenPipeError):
+        pass
+    finally:
+        writer.close()
+        try:
+            await writer.wait_closed()
+        except Exception:
+            pass
+
+
+async def _run_macro_mesh_server() -> None:
+    """Start the Macro Mesh TCP server on :8899 concurrently with
+    the main FastAPI/WebSocket server on :8888."""
+    server = await asyncio.start_server(
+        _handle_macro_mesh_client, MACRO_MESH_HOST, MACRO_MESH_PORT
+    )
+    async with server:
+        await server.serve_forever()
 
 
 # ---------------------------------------------------------------------------

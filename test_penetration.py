@@ -4,6 +4,8 @@ Digital Twin Sanctuary — Penetration & State Consistency Test Suite
 Verifies:
   1. Zero-Leak Security  — duplicate nonce + tampered payload attacks
   2. State Machine        — threshold breach → STASIS_LOCKED over WebSocket
+  3. Macro Mesh           — P2P TCP concurrency, RESONANCE_DEFICIT_BROADCAST,
+                            CROSS_ANCESTRY_AUDIT_REQUEST
 """
 
 import asyncio
@@ -15,13 +17,17 @@ import websockets
 from dts_core import (
     EphemeralKeyRotator,
     HardenedSentry,
+    MaterialRegistry,
     MemoryPool,
+    TheAncestry,
     compute_packet_hmac,
 )
 from dts_server import SystemState, TheLive
 
 ANCHOR_KEY = b"dts_default_anchor_2024"
 WS_URI = "ws://127.0.0.1:8888/graft"
+MACRO_MESH_HOST = "127.0.0.1"
+MACRO_MESH_PORT = 8899
 
 
 # ======================================================================
@@ -184,6 +190,60 @@ def test_foundry_progression() -> None:
     print("  [+] wisdom_yield incremented to 0.1 on 3rd validator ✓")
 
 
+def test_material_registry() -> None:
+    """Verify MaterialRegistry stores materials and deficit broadcasts."""
+    registry = MaterialRegistry()
+
+    registry.register_material("MAT_001", {"type": "resonance_crystal", "purity": 0.98})
+    mat = registry.get_material("MAT_001")
+    assert mat is not None
+    assert mat["properties"]["purity"] == 0.98
+    print("  [+] Material registered and retrieved ✓")
+
+    registry.record_resonance_deficit({
+        "source": "NODE_ALPHA",
+        "deficit": {"frequency": 440.0, "magnitude": -12.5},
+    })
+    assert len(registry.get_deficit_log()) == 1
+    snap = registry.get_registry_snapshot()
+    assert snap["material_count"] == 1
+    assert snap["deficit_broadcasts"] == 1
+    print("  [+] Resonance deficit recorded and snapshot correct ✓")
+
+
+def test_ancestry_chain() -> None:
+    """Verify TheAncestry builds a cryptographically linked chain."""
+    ancestry = TheAncestry()
+
+    # Genesis block
+    head = ancestry.get_head_block()
+    assert head.index == 0
+    assert head.previous_hash == "0" * 64
+    assert len(head.block_hash) == 64
+    print(f"  [+] Genesis block: index=0, hash={head.block_hash[:16]}... ✓")
+
+    # Append blocks
+    b1 = ancestry.append_block({"type": "TELEMETRY", "value": 42})
+    assert b1.index == 1
+    assert b1.previous_hash == head.block_hash
+    b2 = ancestry.append_block({"type": "AUDIT", "result": "pass"})
+    assert b2.index == 2
+    assert b2.previous_hash == b1.block_hash
+    print(f"  [+] Chain extended to length {ancestry.get_chain_length()} ✓")
+
+    # Integrity check
+    assert ancestry.verify_chain_integrity()
+    print("  [+] Chain integrity verified ✓")
+
+    # Audit response
+    audit = ancestry.get_audit_response()
+    assert audit["type"] == "CROSS_ANCESTRY_AUDIT_RESPONSE"
+    assert audit["head_index"] == 2
+    assert audit["head_hash"] == b2.block_hash
+    assert audit["chain_length"] == 3
+    print(f"  [+] Audit response: head_index={audit['head_index']}, hash={audit['head_hash'][:16]}... ✓")
+
+
 # ======================================================================
 # Integration Tests (require running server)
 # ======================================================================
@@ -270,6 +330,109 @@ async def test_ws_stasis_broadcast() -> None:
 
 
 # ======================================================================
+# Macro Mesh Integration Tests (require server on :8888 + :8899)
+# ======================================================================
+
+async def _tcp_send_recv(frame: dict) -> dict:
+    """Send a newline-delimited JSON frame to the Macro Mesh TCP port
+    and return the parsed response."""
+    reader, writer = await asyncio.open_connection(MACRO_MESH_HOST, MACRO_MESH_PORT)
+    writer.write((json.dumps(frame) + "\n").encode())
+    await writer.drain()
+    data = await asyncio.wait_for(reader.readline(), timeout=5.0)
+    writer.close()
+    await writer.wait_closed()
+    return json.loads(data.decode().strip())
+
+
+async def test_resonance_deficit_broadcast() -> None:
+    """Send a RESONANCE_DEFICIT_BROADCAST to :8899 and verify acknowledgement."""
+    frame = {
+        "type": "RESONANCE_DEFICIT_BROADCAST",
+        "source": "NODE_BETA",
+        "deficit": {"frequency": 528.0, "magnitude": -8.3},
+    }
+    resp = await _tcp_send_recv(frame)
+    assert resp["status"] == "DEFICIT_ACKNOWLEDGED", f"Unexpected: {resp}"
+    assert resp["registry_snapshot"]["deficit_broadcasts"] >= 1
+    print("  [+] RESONANCE_DEFICIT_BROADCAST acknowledged ✓")
+    print(f"      Registry: {resp['registry_snapshot']['deficit_broadcasts']} deficit(s) logged")
+
+
+async def test_cross_ancestry_audit() -> None:
+    """Send a CROSS_ANCESTRY_AUDIT_REQUEST and verify head block response."""
+    frame = {"type": "CROSS_ANCESTRY_AUDIT_REQUEST"}
+    resp = await _tcp_send_recv(frame)
+    assert resp["type"] == "CROSS_ANCESTRY_AUDIT_RESPONSE", f"Unexpected: {resp}"
+    assert isinstance(resp["head_index"], int)
+    assert isinstance(resp["head_hash"], str)
+    assert len(resp["head_hash"]) == 64  # SHA-256 hex
+    assert resp["chain_length"] >= 1
+    print(f"  [+] CROSS_ANCESTRY_AUDIT_RESPONSE received ✓")
+    print(f"      head_index={resp['head_index']}, chain_length={resp['chain_length']}")
+    print(f"      head_hash={resp['head_hash'][:32]}...")
+
+
+async def test_macro_mesh_unknown_frame() -> None:
+    """Send an unknown frame type and verify error response."""
+    frame = {"type": "BOGUS_FRAME", "data": "test"}
+    resp = await _tcp_send_recv(frame)
+    assert resp["status"] == "ERROR"
+    assert "Unknown frame type" in resp["reason"]
+    print("  [+] Unknown frame type rejected with error ✓")
+
+
+async def test_dual_port_concurrency() -> None:
+    """Verify both :8888 (WebSocket) and :8899 (TCP) serve concurrently
+    without thread blocking."""
+    rotator = EphemeralKeyRotator(ANCHOR_KEY)
+
+    # Prepare WebSocket task
+    async def ws_task() -> str:
+        async with websockets.connect(WS_URI) as ws:
+            await ws.send(json.dumps({"type": "UI_SUBSCRIBE"}))
+            resp = json.loads(await ws.recv())
+            return resp["type"]
+
+    # Prepare TCP task
+    async def tcp_task() -> str:
+        frame = {"type": "CROSS_ANCESTRY_AUDIT_REQUEST"}
+        resp = await _tcp_send_recv(frame)
+        return resp["type"]
+
+    # Run both concurrently
+    ws_result, tcp_result = await asyncio.gather(ws_task(), tcp_task())
+
+    assert ws_result == "STATE_UPDATE", f"WS returned: {ws_result}"
+    assert tcp_result == "CROSS_ANCESTRY_AUDIT_RESPONSE", f"TCP returned: {tcp_result}"
+    print("  [+] Dual-port concurrent requests served without blocking ✓")
+    print(f"      WS(:8888) → {ws_result}, TCP(:8899) → {tcp_result}")
+
+
+async def test_deficit_then_audit_chain_grows() -> None:
+    """Send a deficit broadcast, then audit — verify the chain grew."""
+    # Get initial chain length
+    audit1 = await _tcp_send_recv({"type": "CROSS_ANCESTRY_AUDIT_REQUEST"})
+    initial_length = audit1["chain_length"]
+
+    # Send a deficit broadcast (appends a block)
+    deficit = {
+        "type": "RESONANCE_DEFICIT_BROADCAST",
+        "source": "NODE_GAMMA",
+        "deficit": {"frequency": 396.0, "magnitude": -5.0},
+    }
+    await _tcp_send_recv(deficit)
+
+    # Re-audit
+    audit2 = await _tcp_send_recv({"type": "CROSS_ANCESTRY_AUDIT_REQUEST"})
+    assert audit2["chain_length"] == initial_length + 1, (
+        f"Chain should grow by 1: {initial_length} → {audit2['chain_length']}"
+    )
+    assert audit2["head_index"] == audit1["head_index"] + 1
+    print(f"  [+] Chain grew: {initial_length} → {audit2['chain_length']} after deficit broadcast ✓")
+
+
+# ======================================================================
 # Runner
 # ======================================================================
 
@@ -296,6 +459,12 @@ def run_unit_tests() -> None:
     print("\n[TEST] FoundryModule Progression")
     test_foundry_progression()
 
+    print("\n[TEST] MaterialRegistry")
+    test_material_registry()
+
+    print("\n[TEST] TheAncestry Chain")
+    test_ancestry_chain()
+
     print("\n" + "-" * 60)
     print("ALL UNIT TESTS PASSED")
     print("-" * 60)
@@ -303,7 +472,7 @@ def run_unit_tests() -> None:
 
 async def run_integration_tests() -> None:
     print("\n" + "=" * 60)
-    print("INTEGRATION TESTS — WebSocket Graft Point")
+    print("INTEGRATION TESTS — WebSocket Graft Point (:8888)")
     print("=" * 60)
 
     print("\n[TEST] WS Valid + Replay Attack")
@@ -316,7 +485,30 @@ async def run_integration_tests() -> None:
     await test_ws_stasis_broadcast()
 
     print("\n" + "-" * 60)
-    print("ALL INTEGRATION TESTS PASSED")
+    print("ALL WEBSOCKET INTEGRATION TESTS PASSED")
+    print("-" * 60)
+
+    print("\n" + "=" * 60)
+    print("MACRO MESH TESTS — P2P TCP Graft Point (:8899)")
+    print("=" * 60)
+
+    print("\n[TEST] Dual-Port Async Concurrency")
+    await test_dual_port_concurrency()
+
+    print("\n[TEST] RESONANCE_DEFICIT_BROADCAST")
+    await test_resonance_deficit_broadcast()
+
+    print("\n[TEST] CROSS_ANCESTRY_AUDIT_REQUEST")
+    await test_cross_ancestry_audit()
+
+    print("\n[TEST] Unknown Frame Rejection")
+    await test_macro_mesh_unknown_frame()
+
+    print("\n[TEST] Deficit → Audit Chain Growth")
+    await test_deficit_then_audit_chain_grows()
+
+    print("\n" + "-" * 60)
+    print("ALL MACRO MESH TESTS PASSED")
     print("-" * 60)
 
 
@@ -326,11 +518,13 @@ if __name__ == "__main__":
     run_unit_tests()
 
     if "--integration" in sys.argv:
-        print("\nStarting integration tests (server must be running on :8888)...")
+        print("\nStarting integration tests (server must be running on :8888 + :8899)...")
         asyncio.run(run_integration_tests())
     else:
         print("\nSkipping integration tests. Run with --integration flag")
         print("(ensure server is running: python dts_server.py)")
+        print("  :8888 = WebSocket Graft Point")
+        print("  :8899 = Macro Mesh TCP P2P Port")
 
     print("\n" + "=" * 60)
     print("TEST SUITE COMPLETE")
